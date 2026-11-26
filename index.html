@@ -86,7 +86,6 @@ button{font:inherit;cursor:pointer}
 <div class="hud off" id="actions">
   <button class="ghost" id="b-entrance" type="button">Entrance</button>
   <button class="ghost" id="b-wander" type="button">Wander</button>
-  <button class="ghost" id="b-del" type="button" style="display:none">Delete</button>
   <button class="gold" id="b-add" type="button">Leave an unsaid word</button>
 </div>
 <div class="hud off" id="cap"></div>
@@ -121,7 +120,6 @@ button{font:inherit;cursor:pointer}
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script>
 /* Paste your Firebase web-app config here (Project settings > Your apps) */
 window.FIREBASE_CONFIG={apiKey:"AIzaSyAUwuPgYcQ4voIkuxcP1Hc_RmSmPeMAfbM",authDomain:"museum-of-unsaid-words.firebaseapp.com",projectId:"museum-of-unsaid-words",storageBucket:"museum-of-unsaid-words.firebasestorage.app",messagingSenderId:"623361111789",appId:"1:623361111789:web:882c2112e1ecd3fa043ee4"};
@@ -156,7 +154,7 @@ const cleanText=(s,n)=>String(s==null?'':s).replace(/\r/g,'').replace(/[ \t]+/g,
 function sanitize(d,id){
   if(!d||typeof d!=='object') return null;
   const text=cleanText(d.text,420); if(!text) return null;
-  return {id:String(id),uid:typeof d.uid==='string'?d.uid.slice(0,128):'',to:cleanLine(d.to,60),text,from:cleanLine(d.from,32)||'Anonymous',
+  return {id:String(id),to:cleanLine(d.to,60),text,from:cleanLine(d.from,32)||'Anonymous',
     style:STYLE_KEYS.indexOf(d.style)>=0?d.style:'gilt',t:typeof d.t==='number'&&isFinite(d.t)?d.t:0};
 }
 
@@ -165,7 +163,7 @@ function allPieces(){
   const m=new Map();
   SEEDS.forEach(p=>m.set(p.id,p));
   remote.forEach((p,id)=>m.set(id,p));
-  return Array.from(m.values()).sort((a,b)=>b.t-a.t).slice(0,200);
+  return Array.from(m.values()).sort((a,b)=>b.t-a.t).slice(0,300);
 }
 
 /* ---------- shared db ---------- */
@@ -176,7 +174,7 @@ function getDb(){
       try{
         if(window.claude&&window.claude.use){ const d=await window.claude.use('db'); if(d) return d; }
         const c=window.FIREBASE_CONFIG;
-        if(window.firebase&&c&&c.projectId&&c.apiKey&&c.apiKey.indexOf('PASTE')<0){ if(!firebase.apps.length) firebase.initializeApp(c); try{ const cred=await firebase.auth().signInAnonymously(); window.MY_UID=cred.user.uid; }catch(e){ console.error('Anonymous sign-in failed',e); } return firebase.firestore(); }
+        if(window.firebase&&c&&c.projectId&&c.apiKey&&c.apiKey.indexOf('PASTE')<0){ if(!firebase.apps.length) firebase.initializeApp(c); return firebase.firestore(); }
       }catch(e){}
       return null;
     })();
@@ -423,8 +421,6 @@ function run(renderer){
   function setCaption(){
     if(focus&&focus.i>=0&&frames[focus.i]){ const p=frames[focus.i].piece; cap.textContent='Nº '+frames[focus.i].num+(p.seed?' · from the founding collection':''); }
     else cap.textContent='';
-    const fp=focus&&focus.i>=0&&frames[focus.i]?frames[focus.i].piece:null;
-    $('b-del').style.display=(fp&&!fp.seed&&fp.uid&&window.MY_UID&&fp.uid===window.MY_UID)?'':'none';
   }
   function focusOn(i){
     const f=frames[i]; if(!f) return;
@@ -528,7 +524,6 @@ function run(renderer){
     const btn=$('hang'); btn.disabled=true; msg.textContent='Hanging your frame…';
     const db=await getDb();
     if(!db){ btn.disabled=false; msg.textContent='Couldn’t reach the gallery. Try again later.'; return; }
-    if(window.MY_UID) piece.uid=window.MY_UID;
     let id=null;
     try{ const ref=await db.collection('words').add(piece); id=ref.id; }catch(err){ console.error(err); btn.disabled=false; msg.textContent='Couldn’t hang your words ('+((err&&err.code)||'error')+').'; return; }
     const full=Object.assign({id},piece); remote.set(id,full);
@@ -545,7 +540,7 @@ function run(renderer){
   getDb().then(db=>{
     if(!db) return;
     try{
-      db.collection('words').orderBy('t','desc').limit(200).onSnapshot(snap=>{
+      db.collection('words').orderBy('t','desc').limit(300).onSnapshot(snap=>{
         remote.clear(); snap.docs.forEach(d=>{ const x=sanitize(d.data(),d.id); if(x) remote.set(d.id,x); }); scheduleRefresh();
       },()=>{});
     }catch(e){}
@@ -553,12 +548,6 @@ function run(renderer){
 
   /* ---------- hud buttons & entry ---------- */
   $('b-add').addEventListener('click',openModal);
-  $('b-del').addEventListener('click',async()=>{
-    if(!(focus&&focus.i>=0)||!frames[focus.i]) return; const pc=frames[focus.i].piece;
-    if(!confirm('Delete this unsaid word?')) return;
-    const db=await getDb(); if(!db) return;
-    try{ await db.collection('words').doc(pc.id).delete(); remote.delete(pc.id); exitFocus(); refresh(); toast('Removed.',3000); }catch(e){ toast('Couldn\u2019t delete it.',3000); }
-  });
   $('b-entrance').addEventListener('click',()=>goTo(0,2.5));
   $('b-wander').addEventListener('click',()=>{ if(frames.length) focusOn(Math.floor(Math.random()*frames.length)); });
   $('enter').addEventListener('click',()=>{
@@ -631,11 +620,10 @@ function wireUi(gl){
     const sel=document.querySelector('input[name=style]:checked');
     const piece={to:cleanLine($('f-to').value,60),text,from:cleanLine($('f-from').value,32)||randomName(),style:sel?sel.value:'gilt',t:Date.now()};
     const db=await getDb(); if(!db){ toast('The shared gallery is unreachable right now.'); return; }
-    if(window.MY_UID) piece.uid=window.MY_UID;
     try{ const id=(await db.collection('words').add(piece)).id; remote.set(id,Object.assign({id},piece)); }catch(err){ toast('Your words could not be hung just now.'); return; }
     $('form').reset(); _close(); render(); toast('Hung in the gallery.');
   });
-  getDb().then(db=>{ if(db) try{ db.collection('words').orderBy('t','desc').limit(200).onSnapshot(s=>{ remote.clear(); s.docs.forEach(d=>{ const x=sanitize(d.data(),d.id); if(x) remote.set(d.id,x); }); render(); },()=>{}); }catch(e){} });
+  getDb().then(db=>{ if(db) try{ db.collection('words').orderBy('t','desc').limit(300).onSnapshot(s=>{ remote.clear(); s.docs.forEach(d=>{ const x=sanitize(d.data(),d.id); if(x) remote.set(d.id,x); }); render(); },()=>{}); }catch(e){} });
 }
 /* modal close controls (both modes) */
 function closeAny(){ if(_close) _close(); }
