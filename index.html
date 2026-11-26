@@ -176,7 +176,7 @@ function getDb(){
       try{
         if(window.claude&&window.claude.use){ const d=await window.claude.use('db'); if(d) return d; }
         const c=window.FIREBASE_CONFIG;
-        if(window.firebase&&c&&c.projectId&&c.apiKey&&c.apiKey.indexOf('PASTE')<0){ if(!firebase.apps.length) firebase.initializeApp(c); try{ const cred=await firebase.auth().signInAnonymously(); window.MY_UID=cred.user.uid; }catch(e){} return firebase.firestore(); }
+        if(window.firebase&&c&&c.projectId&&c.apiKey&&c.apiKey.indexOf('PASTE')<0){ if(!firebase.apps.length) firebase.initializeApp(c); try{ const cred=await firebase.auth().signInAnonymously(); window.MY_UID=cred.user.uid; }catch(e){ console.error('Anonymous sign-in failed',e); } return firebase.firestore(); }
       }catch(e){}
       return null;
     })();
@@ -530,7 +530,7 @@ function run(renderer){
     if(!db){ btn.disabled=false; msg.textContent='Couldn’t reach the gallery. Try again later.'; return; }
     if(window.MY_UID) piece.uid=window.MY_UID;
     let id=null;
-    try{ const ref=await db.collection('words').add(piece); id=ref.id; }catch(err){ btn.disabled=false; msg.textContent='Couldn’t hang your words. Try again.'; return; }
+    try{ const ref=await db.collection('words').add(piece); id=ref.id; }catch(err){ console.error(err); btn.disabled=false; msg.textContent='Couldn’t hang your words ('+((err&&err.code)||'error')+').'; return; }
     const full=Object.assign({id},piece); remote.set(id,full);
     lastSubmit=Date.now(); btn.disabled=false; msg.textContent='';
     $('form').reset(); $('count2').textContent='0 / 420';
