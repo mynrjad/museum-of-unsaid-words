@@ -67,6 +67,7 @@ button{font:inherit;cursor:pointer}
 .nogl #sr li{max-width:560px;margin:0 auto 18px;padding:22px 26px;background:var(--card);border-radius:18px;font:500 20px/1.5 'Cormorant Garamond',serif;white-space:pre-wrap}
 .nogl #hint,.nogl #walk{display:none}
 #brand,#hint,#cap,#b-entrance,#b-wander,.sub,.opt,.card legend,.tiny{display:none}
+.card input[type=file]{margin-top:8px;color:var(--mid);font-size:13px;width:100%}.card input[type=file]::file-selector-button{margin-right:12px;padding:8px 16px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--ink);font:inherit;font-size:12px;letter-spacing:.14em;text-transform:uppercase;cursor:pointer}
 .plate,.card{outline:1px solid var(--line);outline-offset:-10px}
 </style>
 </head>
@@ -105,6 +106,8 @@ button{font:inherit;cursor:pointer}
     <textarea id="f-text" maxlength="420" required placeholder="Say it here&hellip;"></textarea>
     <label for="f-from">From <span class="opt">an invented name &mdash; blank to be given one</span></label>
     <input type="text" id="f-from" maxlength="32" placeholder="The Quiet Heron">
+    <label for="f-img">Image <span class="opt">optional</span></label>
+    <input type="file" id="f-img" accept="image/*">
     <fieldset>
       <legend>Choose a frame</legend>
       <div class="frames">
@@ -155,7 +158,7 @@ function sanitize(d,id){
   if(!d||typeof d!=='object') return null;
   const text=cleanText(d.text,420); if(!text) return null;
   return {id:String(id),to:cleanLine(d.to,60),text,from:cleanLine(d.from,32)||'Anonymous',
-    style:STYLE_KEYS.indexOf(d.style)>=0?d.style:'gilt',t:typeof d.t==='number'&&isFinite(d.t)?d.t:0};
+    img:(typeof d.img==='string'&&/^data:image\/(jpeg|png|webp);base64,/.test(d.img)&&d.img.length<300000)?d.img:'',style:STYLE_KEYS.indexOf(d.style)>=0?d.style:'gilt',t:typeof d.t==='number'&&isFinite(d.t)?d.t:0};
 }
 
 const remote=new Map();
@@ -264,8 +267,15 @@ function run(renderer){
   function spaced(g,v){ try{ g.letterSpacing=v; }catch(e){} }
   function poly(g,pts){ g.beginPath(); g.moveTo(pts[0][0],pts[0][1]); for(let i=1;i<pts.length;i++) g.lineTo(pts[i][0],pts[i][1]); g.closePath(); g.fill(); }
   function diamond(g,x,y,r){ g.save(); g.translate(x,y); g.rotate(Math.PI/4); g.fillRect(-r,-r,2*r,2*r); g.restore(); }
+  const imgCache=new Map();
+  function getImg(p){
+    let e=imgCache.get(p.id); if(e) return e.ok?e.im:null;
+    const im=new Image(); e={im,ok:false}; imgCache.set(p.id,e);
+    im.onload=()=>{ e.ok=true; frames.forEach(f=>{ if(f.piece.id===p.id&&f.loaded){ if(f.tex) f.tex.dispose(); f.tex=new THREE.CanvasTexture(paintPiece(f.piece,f.num)); f.tex.anisotropy=8; setTex(f.pic.material,f.tex); } }); };
+    im.src=p.img; return null;
+  }
   function paintPiece(p,num){
-    const [c,g]=cv(800,1000); const st=PAPER[p.style]||PAPER.gilt;
+    const [c,g]=cv(800,1000); const st=PAPER[p.style]||PAPER.gilt, hasImg=!!p.img, im=hasImg?getImg(p):null;
     g.fillStyle=st.bg; g.fillRect(0,0,800,1000);
     const vg=g.createRadialGradient(400,500,200,400,500,640); vg.addColorStop(0,'rgba(255,255,255,.12)'); vg.addColorStop(1,'rgba(0,0,0,.16)'); g.fillStyle=vg; g.fillRect(0,0,800,1000);
     g.strokeStyle=st.acc; g.lineWidth=4; g.strokeRect(28,28,744,944); g.lineWidth=1.2; g.strokeRect(46,46,708,908);
@@ -276,10 +286,19 @@ function run(renderer){
     g.fillStyle=st.acc; g.font='italic 500 28px "Cormorant Garamond"'; g.fillText('to',400,250);
     const to=p.to||'no one in particular'; let s=82; do{ g.font='400 '+s+'px "Pinyon Script"'; s-=3; }while(g.measureText(to).width>600&&s>30);
     g.fillStyle=st.ink; g.fillText(to,400,336);
-    let size=44,lines; for(;size>=22;size-=2){ g.font='500 '+size+'px "Cormorant Garamond"'; lines=wrapText(g,p.text,580); if(lines.length*size*1.34<=400) break; }
-    lines.forEach((ln,i)=>g.fillText(ln,400,410+size+i*size*1.34));
+    let top=410;
+    if(hasImg){
+      const bw=560,bh=300,bx=120,by=368;
+      g.fillStyle='rgba(0,0,0,.14)'; g.fillRect(bx,by,bw,bh);
+      if(im){ const r=Math.max(bw/im.width,bh/im.height), w=im.width*r, h=im.height*r; g.save(); g.beginPath(); g.rect(bx,by,bw,bh); g.clip(); g.drawImage(im,bx+(bw-w)/2,by+(bh-h)/2,w,h); g.restore(); }
+      g.strokeStyle=st.acc; g.lineWidth=2; g.strokeRect(bx-6,by-6,bw+12,bh+12); top=688;
+    }
+    const maxH=hasImg?150:400; let size=hasImg?34:44,lines;
+    for(;size>=20;size-=2){ g.font='500 '+size+'px "Cormorant Garamond"'; lines=wrapText(g,p.text,580); if(lines.length*size*1.34<=maxH) break; }
+    g.fillStyle=st.ink; lines.forEach((ln,i)=>g.fillText(ln,400,top+size+i*size*1.34));
     const from='\u2014 '+p.from; let fs=28; do{ g.font='italic 500 '+fs+'px "Cormorant Garamond"'; fs-=2; }while(g.measureText(from).width>600&&fs>14);
-    g.fillStyle=st.dim; g.fillText(from,400,904);
+    g.fillStyle=st.dim; g.fillText(from,400,880);
+    if(p.t&&!p.seed){ g.font='400 17px "Jost"'; spaced(g,'4px'); g.fillText(new Date(p.t).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}).toUpperCase(),400,926); spaced(g,'0px'); }
     return c;
   }
   function paintSubmit(){
@@ -512,6 +531,12 @@ function run(renderer){
   let rbT=0; function scheduleRefresh(){ clearTimeout(rbT); rbT=setTimeout(refresh,250); }
   refresh();
 
+  function shrinkImage(file){ return new Promise((res,rej)=>{
+    const u=URL.createObjectURL(file), im=new Image();
+    im.onload=()=>{ URL.revokeObjectURL(u); const r=Math.min(1,720/Math.max(im.width,im.height)), c=document.createElement('canvas'); c.width=Math.round(im.width*r); c.height=Math.round(im.height*r);
+      c.getContext('2d').drawImage(im,0,0,c.width,c.height); let q=.72,d=c.toDataURL('image/jpeg',q); while(d.length>230000&&q>.3){ q-=.1; d=c.toDataURL('image/jpeg',q); } d.length>230000?rej(new Error('big')):res(d); };
+    im.onerror=()=>rej(new Error('bad')); im.src=u; }); }
+
   /* submit */
   let lastSubmit=0;
   async function submit(e){
@@ -521,6 +546,8 @@ function run(renderer){
     if(Date.now()-lastSubmit<15000){ msg.textContent='Give the gallery a moment before hanging another.'; return; }
     const sel=document.querySelector('input[name=style]:checked');
     const piece={to:cleanLine($('f-to').value,60),text,from:cleanLine($('f-from').value,32)||randomName(),style:sel?sel.value:'gilt',t:Date.now()};
+    const file=$('f-img').files&&$('f-img').files[0];
+    if(file){ if(!/^image\//.test(file.type)){ msg.textContent='Please choose a photo.'; return; } try{ piece.img=await shrinkImage(file); }catch(e){ msg.textContent='That image couldn’t be read.'; return; } }
     const btn=$('hang'); btn.disabled=true; msg.textContent='Hanging your frame…';
     const db=await getDb();
     if(!db){ btn.disabled=false; msg.textContent='Couldn’t reach the gallery. Try again later.'; return; }
