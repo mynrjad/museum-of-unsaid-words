@@ -165,7 +165,7 @@ function allPieces(){
   const m=new Map();
   SEEDS.forEach(p=>m.set(p.id,p));
   remote.forEach((p,id)=>m.set(id,p));
-  return Array.from(m.values()).sort((a,b)=>b.t-a.t).slice(0,80);
+  return Array.from(m.values()).sort((a,b)=>b.t-a.t).slice(0,200);
 }
 
 /* ---------- shared db ---------- */
@@ -545,7 +545,7 @@ function run(renderer){
   getDb().then(db=>{
     if(!db) return;
     try{
-      db.collection('words').orderBy('t','desc').limit(80).onSnapshot(snap=>{
+      db.collection('words').orderBy('t','desc').limit(200).onSnapshot(snap=>{
         remote.clear(); snap.docs.forEach(d=>{ const x=sanitize(d.data(),d.id); if(x) remote.set(d.id,x); }); scheduleRefresh();
       },()=>{});
     }catch(e){}
@@ -635,7 +635,7 @@ function wireUi(gl){
     try{ const id=(await db.collection('words').add(piece)).id; remote.set(id,Object.assign({id},piece)); }catch(err){ toast('Your words could not be hung just now.'); return; }
     $('form').reset(); _close(); render(); toast('Hung in the gallery.');
   });
-  getDb().then(db=>{ if(db) try{ db.collection('words').orderBy('t','desc').limit(80).onSnapshot(s=>{ remote.clear(); s.docs.forEach(d=>{ const x=sanitize(d.data(),d.id); if(x) remote.set(d.id,x); }); render(); },()=>{}); }catch(e){} });
+  getDb().then(db=>{ if(db) try{ db.collection('words').orderBy('t','desc').limit(200).onSnapshot(s=>{ remote.clear(); s.docs.forEach(d=>{ const x=sanitize(d.data(),d.id); if(x) remote.set(d.id,x); }); render(); },()=>{}); }catch(e){} });
 }
 /* modal close controls (both modes) */
 function closeAny(){ if(_close) _close(); }
